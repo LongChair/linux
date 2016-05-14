@@ -101,6 +101,14 @@
 			linux,contiguous-region;
 		};
 
+		jpeghwdec_reserved:linux,jpeghwdec {
+			compatible = "amlogic, jpeghwdec-mem";
+			reusable;
+			size = <0x0 0x3000000>;
+			alignment = <0x0 0x400000>;
+			linux,contiguous-region;
+		};
+
 		/* codec shared reserved */
 		codec_mm_reserved:linux,codec_mm_reserved {
 			compatible = "amlogic, codec-mm-reserved";
@@ -242,6 +250,13 @@
 		   memory-region = <&picdec_cma_reserved>;
 		   dev_name = "picdec";
 		   status = "okay";
+	};
+
+	jpeghwdec {
+		   compatible = "amlogic, jpeghwdec";
+			 memory-region = <&jpeghwdec_reserved>;
+			 dev_name = "jpeghwdec";
+			 status = "okay";
 	};
 
 	ppmgr {
