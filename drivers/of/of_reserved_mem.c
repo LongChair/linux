@@ -366,6 +366,7 @@ int of_reserved_mem_device_init(struct device *dev)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(of_reserved_mem_device_init);
 
 /**
  * of_reserved_mem_device_release() - release reserved memory device structures
