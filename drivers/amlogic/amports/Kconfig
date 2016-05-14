@@ -217,6 +217,17 @@ config AM_JPEGDEC
 	  write need more.....
 	  need more...
 
+config AM_JPEGHWDEC
+        tristate "HW jpeg decoder"
+        default n
+
+        select AM_PTSSERVER
+        ---help---
+          Select to enable HW jpeg decoder.
+          need write more details...
+          write need more.....
+          need more...
+
 config AM_TIMESYNC
 	boolean "Amlogic Time sync driver"
 	default y
