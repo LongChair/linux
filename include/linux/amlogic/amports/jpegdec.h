@@ -42,14 +42,14 @@
 #define JPEGDEC_STAT_UNSUPPORT			0x10
 #define JPEGDEC_STAT_INFO_READY			0x20
 #define JPEGDEC_STAT_DONE				0x40
-enum jpegdec_angle_e {
+typedef enum {
 	CLKWISE_0 = 0,
 	CLKWISE_90 = 1,
 	CLKWISE_180 = 2,
 	CLKWISE_270 = 3,
-};
+} jpegdec_angle_e;
 
-struct jpegdec_config_s {
+typedef struct {
 
 	unsigned long addr_y;
 
@@ -77,10 +77,10 @@ struct jpegdec_config_s {
 
 	unsigned dec_h;
 
-	jpegdec_angle_t angle;
-};
+	jpegdec_angle_e angle;
+}	jpegdec_config_s;
 
-struct jpegdec_info_s {
+typedef struct {
 
 	unsigned width;
 
@@ -89,11 +89,11 @@ struct jpegdec_info_s {
 	unsigned comp_num;
 
 	unsigned type;
-};
+} jpegdec_info_s;
 
-struct jpegdec_mem_info_s {
+typedef struct {
 
-	jpegdec_angle_t angle;
+	jpegdec_angle_e angle;
 
 	unsigned dec_w;
 
@@ -102,6 +102,6 @@ struct jpegdec_mem_info_s {
 	unsigned canv_addr;
 
 	unsigned canv_len;
-};
+} jpegdec_mem_info_s;
 
 #endif				/* JPEGDEC_H */

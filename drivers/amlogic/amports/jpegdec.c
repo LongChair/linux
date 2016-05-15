@@ -28,11 +28,11 @@
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 /* #include <mach/am_regs.h> */
-#include <plat/io.h>
+#include <linux/io.h>
 
 #include <linux/amlogic/amports/jpegdec.h>
-#include <linux/amlogic/amports/canvas.h>
-
+#include <linux/amlogic/canvas/canvas.h>
+#include <linux/amlogic/amports/amstream.h>
 #include <linux/uaccess.h>
 
 #include "amvdec.h"
@@ -44,8 +44,19 @@
 #define DRIVER_NAME "amjpegdec"
 #define MODULE_NAME "amjpegdec"
 
-/* #define DEBUG */
+// missing registers , now in dvb driver
+#define PSCALE_PICI_W						0x0912
+#define PSCALE_PICI_H						0x0913
+#define PSCALE_PICO_W						0x0914
+#define PSCALE_PICO_H						0x0915
+#define PSCALE_RBUF_START_BLKX	0x0925 // ?
+#define PSCALE_RBUF_START_BLKY	0x0926 // ?
+#define PSCALE_PICO_SHIFT_XY		0x0928
+#define PSCALE_CANVAS_RD_ADDR		0x092c // ?
+#define PSCALE_CANVAS_WR_ADDR		0x092d //
 
+/* #define DEBUG */
+#define JPEGDEC_CANVAS_INDEX		 0
 #define JPEGDEC_OUTPUT_CANVAS_Y (JPEGDEC_CANVAS_INDEX)
 #define JPEGDEC_OUTPUT_CANVAS_U (JPEGDEC_CANVAS_INDEX+1)
 #define JPEGDEC_OUTPUT_CANVAS_V (JPEGDEC_CANVAS_INDEX+2)
@@ -73,6 +84,7 @@
 #define JPEG_MCU_CROP_VSTART    PSCALE_PICO_W
 #define JPEG_MCU_CROP_VEND      PSCALE_PICO_H
 
+#define DEBUG
 #ifdef DEBUG
 #define pr_dbg(fmt, args...) pr_info(KERN_DEBUG "amjpegdec: " fmt, ## args)
 #else
@@ -81,8 +93,8 @@
 #define pr_error(fmt, args...) pr_err(KERN_ERR "amjpegdec: " fmt, ## args)
 
 struct jpegdec_s {
-	jpegdec_config_t conf;
-	jpegdec_info_t info;
+	jpegdec_config_s conf;
+	jpegdec_info_s info;
 	unsigned state;
 };
 
@@ -94,7 +106,7 @@ static DEFINE_MUTEX(jpegdec_module_mutex);
 static struct jpegdec_s *dec;
 static unsigned long pbufAddr;
 static unsigned long pbufSize;
-static jpegdec_mem_info_t jegdec_mem_info;
+static jpegdec_mem_info_s jegdec_mem_info;
 
 static irqreturn_t jpegdec_isr(int irq, void *dev_id)
 {
@@ -138,12 +150,15 @@ static int _init_dec(struct jpegdec_s *d)
 
 	amvdec_enable();
 
-#if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON6
-	WRITE_VREG(DOS_SW_RESET0, (1 << 11));
-	WRITE_VREG(DOS_SW_RESET0, 0);
-#else
-	WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU);
-#endif
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_M6)
+	{
+		WRITE_VREG(DOS_SW_RESET0, (1 << 11));
+		WRITE_VREG(DOS_SW_RESET0, 0);
+	}
+	else
+	{
+		WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU);
+	}
 
 	WRITE_VREG(ASSIST_AMR1_INT0, 0x1);
 	WRITE_VREG(ASSIST_AMR1_INT1, 0xf);
@@ -153,26 +168,36 @@ static int _init_dec(struct jpegdec_s *d)
 	WRITE_VREG(ASSIST_AMR1_INT5, 0x9);
 	WRITE_VREG(ASSIST_AMR1_INT6, 0x4);
 
-#if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON6
-	WRITE_VREG(DOS_SW_RESET0, (1 << 11) | (1 << 7) | (1 << 6));
-	WRITE_VREG(DOS_SW_RESET0, 0);
-#else
-	WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU | RESET_IQIDCT | RESET_MC);
-#endif
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_M6)
+	{
+		WRITE_VREG(DOS_SW_RESET0, (1 << 11) | (1 << 7) | (1 << 6));
+		WRITE_VREG(DOS_SW_RESET0, 0);
+	}
+	else
+	{
+		WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU | RESET_IQIDCT | RESET_MC);
+	}
 
-	if (amvdec_loadmc(jpegdec_mc) < 0) {
+	r = amvdec_loadmc_ex(VFORMAT_JPEG, "jpegdec_mc", NULL);
+
+	if (r < 0) {
 		amvdec_disable();
 
 		pr_error("jpegdec ucode loading failed.\n");
 		return -EBUSY;
 	}
-#if MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON6
-	WRITE_VREG(DOS_SW_RESET0, (1 << 11) | (1 << 10) | (1 << 7) | (1 << 6));
-	WRITE_VREG(DOS_SW_RESET0, 0);
-#else
-	WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU | RESET_IQIDCT | RESET_MC);
-	WRITE_MPEG_REG(RESET2_REGISTER, RESET_PSCALE);
-#endif
+
+	if (get_cpu_type() >= MESON_CPU_MAJOR_ID_M6)
+	{
+		WRITE_VREG(DOS_SW_RESET0, (1 << 11) | (1 << 10) | (1 << 7) | (1 << 6));
+		WRITE_VREG(DOS_SW_RESET0, 0);
+	}
+	else
+	{
+		WRITE_MPEG_REG(RESET0_REGISTER, RESET_VCPU | RESET_IQIDCT | RESET_MC);
+		WRITE_MPEG_REG(RESET2_REGISTER, RESET_PSCALE);
+	}
+
 	WRITE_VREG(PSCALE_RST, 0x7);
 	WRITE_VREG(PSCALE_RST, 0x0);
 
@@ -181,13 +206,10 @@ static int _init_dec(struct jpegdec_s *d)
 	WRITE_VREG(ASSIST_MBOX1_MASK, 1);
 	WRITE_VREG(ASSIST_MBOX1_CLR_REG, 1);
 
-	r = request_irq(INT_VDEC, jpegdec_isr, IRQF_SHARED, "jpegdec-irq",
-					(void *)jpegdec_id);
-
-	if (r) {
+	if (vdec_request_irq(VDEC_IRQ_1, jpegdec_isr,
+	    "jpegdec-irq", (void *)jpegdec_id)) {
+		pr_info("jpegdec irq register error.\n");
 		amvdec_disable();
-
-		pr_error("jpegdec irq register error.\n");
 		return -ENOENT;
 	}
 
@@ -396,7 +418,7 @@ static int amjpegdec_open(struct inode *inode, struct file *file)
 	if (dec != NULL)
 		r = -EBUSY;
 
-	dec = kcalloc(1, sizeof(struct jpegdec_s);
+	dec = kcalloc(1, sizeof(struct jpegdec_s), GFP_KERNEL);
 	if (dec == NULL)
 		r = -ENOMEM;
 
@@ -455,7 +477,7 @@ static long amjpegdec_ioctl(struct file *file, unsigned int cmd, ulong arg)
 	case JPEGDEC_IOC_DECCONFIG:
 		if (dec->state & JPEGDEC_STAT_WAIT_DECCONFIG) {
 			if (copy_from_user(&dec->conf,
-				(void *)arg, sizeof(jpegdec_config_t)))
+			  (void *)arg, sizeof(jpegdec_config_s)))
 				return -EFAULT;
 
 			pr_dbg("amjpegdec_ioctl:config,target (%d-%d-%d-%d)\n",
@@ -490,7 +512,7 @@ static long amjpegdec_ioctl(struct file *file, unsigned int cmd, ulong arg)
 				dec->info.width,
 				dec->info.height);
 			if (copy_to_user((void *)arg, &dec->info,
-					sizeof(jpegdec_info_t)))
+					sizeof(jpegdec_info_s)))
 				return -EFAULT;
 		} else
 			r = -EAGAIN;
@@ -500,7 +522,7 @@ static long amjpegdec_ioctl(struct file *file, unsigned int cmd, ulong arg)
 		return dec->state;
 	case JPEGDEC_G_MEM_INFO:
 		if (copy_from_user(&jegdec_mem_info, (void __user *)arg,
-						   sizeof(jpegdec_mem_info_t)))
+						   sizeof(jpegdec_mem_info_s)))
 			r = -EFAULT;
 		else {
 			unsigned pscaleCanvasbwidth =
@@ -514,7 +536,7 @@ static long amjpegdec_ioctl(struct file *file, unsigned int cmd, ulong arg)
 				pbufSize - pscaleCanvasbwidth;
 
 			if (copy_to_user((void __user *)arg, &jegdec_mem_info,
-						sizeof(jpegdec_mem_info_t)))
+						sizeof(jpegdec_mem_info_s)))
 				r = -EFAULT;
 		}
 		break;
