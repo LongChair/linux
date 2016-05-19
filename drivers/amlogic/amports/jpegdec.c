@@ -53,7 +53,7 @@
 #define PSCALE_RBUF_START_BLKY	0x0926 // ?
 #define PSCALE_PICO_SHIFT_XY		0x0928
 #define PSCALE_CANVAS_RD_ADDR		0x092c // ?
-#define PSCALE_CANVAS_WR_ADDR		0x092d //
+#define PSCALE_CANVAS_WR_ADDR		0x092d // ?
 
 /* #define DEBUG */
 #define JPEGDEC_CANVAS_INDEX		 0
@@ -203,8 +203,9 @@ static int _init_dec(struct jpegdec_s *d)
 
 	WRITE_VREG(JPEG_PIC_WIDTH, 0);
 	WRITE_VREG(JPEG_PIC_HEIGHT, 0);
-	WRITE_VREG(ASSIST_MBOX1_MASK, 1);
 	WRITE_VREG(ASSIST_MBOX1_CLR_REG, 1);
+	WRITE_VREG(ASSIST_MBOX1_MASK, 1);
+	WRITE_VREG(ASSIST_AMR1_INT8, 0x8);
 
 	if (vdec_request_irq(VDEC_IRQ_1, jpegdec_isr,
 	    "jpegdec-irq", (void *)jpegdec_id)) {
@@ -288,6 +289,20 @@ static void _init_scaler(unsigned horz_step, unsigned vert_step)
 	/* C vertical phase step */
 	WRITE_VREG(PSCALE_BMEM_ADDR, BM_VERT_C_PHASE_STEP_OFFSET);
 	WRITE_VREG(PSCALE_BMEM_DAT, vert_step);
+
+	/* reset pscaler */
+#if 1/*MESON_CPU_TYPE >= MESON_CPU_TYPE_MESON6*/
+	WRITE_VREG(DOS_SW_RESET0, (1 << 10));
+	WRITE_VREG(DOS_SW_RESET0, 0);
+#else
+	WRITE_MPEG_REG(RESET2_REGISTER, RESET_PSCALE);
+#endif
+	READ_MPEG_REG(RESET2_REGISTER);
+	READ_MPEG_REG(RESET2_REGISTER);
+	READ_MPEG_REG(RESET2_REGISTER);
+
+	WRITE_VREG(PSCALE_RST, 0x7);
+	WRITE_VREG(PSCALE_RST, 0x0);
 }
 
 static void _dec_run(void)
@@ -439,7 +454,7 @@ static int amjpegdec_open(struct inode *inode, struct file *file)
 static int amjpegdec_release(struct inode *inode, struct file *file)
 {
 	if (dec) {
-		free_irq(INT_VDEC, (void *)jpegdec_id);
+		vdec_free_irq(VDEC_IRQ_1, (void *)jpegdec_id);
 
 		kfree(dec);
 		dec = NULL;
